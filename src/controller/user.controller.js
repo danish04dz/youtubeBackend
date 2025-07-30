@@ -1,5 +1,28 @@
 const User = require ('../models/user.models')
 const {uploadOnCloudinary} = require('../utils/cloudinery.js')
+
+// generate access and refresh token
+const generateAccessAndRefreshTokens = async (userId)=>{
+    try {
+       const user = await User.findById(userId)
+
+       const accessToken = user.generateAccessToken ()
+       const refreshToken = user.generateRefreshToken ()
+
+       user.refreshToken =refreshToken
+       await user.save({
+        validateBeforeSave : false
+       })
+       return  {accessToken, refreshToken}
+
+        
+    } catch (error) {
+        console.log("error while generating access token",error);
+        
+    }
+}
+
+// user Register controller
 exports.registerUser = async (req,res) => {
     try {
         //user register logic
@@ -88,3 +111,73 @@ exports.registerUser = async (req,res) => {
     }
     
 }
+
+
+// User Login Controller
+exports.loginUser = async (req,res) =>{
+    try {
+        // user se email ya username aur password  body se
+    // find user hai ya nhi
+    // password check
+    //access and refresh token agar password correct hai to
+    // send cookies 
+    // send success response
+
+   const {email,username,password} = req.body
+   if(!(username || email)){
+    return res.status(400).json({message:"Username or email required"})
+   }
+
+   const user = await User.findOne({
+    $or : [{username},{email}]
+   })
+
+   if(!user){
+    return res.status(400).json({message: " user does not exist"})
+   }
+
+   const isPasswordValid = await user.isPasswordCorrect(password)
+
+   if(!isPasswordValid){
+    return res.status(400).json({message: " Invalid user credentials"})
+   }
+
+   const {accessToken,refreshToken} = await generateAccessAndRefreshTokens(user._id)
+
+   const  loggedinUser = await User.findById(user._id).select("-password -refreshToken")
+
+   const options = {
+    httpOnly : true,
+    secure: true
+   }
+   return res.status(200).cookie("accessToken",accessToken,options).cookie("refreshToken",refreshToken,options).json({user : loggedinUser,accessToken,refreshToken})
+        
+    } catch (error) {
+        console.log("error in login controller", error)
+    }
+   
+}
+
+// User Logout Controller
+exports.logoutUser = async (req,res) =>{
+    try {
+       await User.findByIdAndUpdate(req.user._id,{
+            $set : {
+                refreshToken: undefined
+            }
+        })
+
+        const options = {
+            httpOnly: true,
+            secure: true
+        }
+        return res.status(200).clearCookie("accessToken",options).clearCookie("refreshToken",options).json({message: "User logged out successfully"})
+        
+    } catch (error) {
+        console.log("error in logout controller", error)
+        return res.status(500).json({message: "Internal server error"})
+    }
+}
+
+
+
